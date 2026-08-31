@@ -1,0 +1,75 @@
+name: update-formula
+
+# Keep the Homebrew formula for crw in sync with upstream's releases. Runs daily
+# and on demand; only publishes when the version changed.
+on:
+  schedule:
+    - cron: "23 6 * * *" # daily, 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # release the Linux bottle + push the keep-alive commit
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Generate the formula + build the Linux bottle
+        run: |
+          # jq/curl/sha256sum/tar are preinstalled on ubuntu-latest.
+          ./update.sh crw.rb
+          echo "VERSION=$(grep -m1 '^  version ' crw.rb | sed -E 's/.*"([^"]+)".*/\1/')" >> "$GITHUB_ENV"
+
+      - name: Publish — release the bottle, then push the formula to the tap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$TAP_DEPLOY_KEY" ]; then
+            echo "::warning::TAP_DEPLOY_KEY not set — built formula + bottle ($VERSION) but skipping publish."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$TAP_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes"
+          git clone git@github.com:jakobhviid/homebrew-tap tap
+          current="$(grep -m1 '^  version ' tap/Formula/crw.rb 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+          if [ "$current" = "$VERSION" ]; then
+            echo "tap already at $VERSION — nothing to do"
+            exit 0
+          fi
+          # Release the bottle FIRST so its url resolves before the formula lands.
+          gh release create "v$VERSION" build/*.bottle.tar.gz -R "$GITHUB_REPOSITORY" \
+            --title "crw $VERSION" \
+            --notes "x86_64 Linux Homebrew bottle for crw $VERSION (repackaged from upstream's release so \`brew install\` pours it without a compiler). macOS + other arches install directly from upstream." \
+            || gh release upload "v$VERSION" build/*.bottle.tar.gz -R "$GITHUB_REPOSITORY" --clobber
+          # Then push the formula to the tap.
+          cp crw.rb tap/Formula/crw.rb
+          cd tap
+          git config user.name "crw-bot"
+          git config user.email "crw-bot@users.noreply.github.com"
+          git add Formula/crw.rb
+          git commit -m "crw ${VERSION}"
+          git push
+
+      - name: Keep the schedule alive
+        # GitHub disables a repo's cron after 60 days with no activity. Releases
+        # land in the *tap*, so push a throwaway commit here only when we're near
+        # the cutoff — ~one every ~50 days, not daily. A GITHUB_TOKEN push counts
+        # as activity but doesn't re-trigger the workflow.
+        run: |
+          last=$(git log -1 --format=%ct)
+          age=$(( ( $(date +%s) - last ) / 86400 ))
+          echo "this repo has been idle for ${age} day(s)"
+          if [ "$age" -ge 50 ]; then
+            date -u +"keep-alive %Y-%m-%dT%H:%M:%SZ (latest crw: ${VERSION:-unknown})" > .keepalive
+            git config user.name "crw-bot"
+            git config user.email "crw-bot@users.noreply.github.com"
+            git add .keepalive
+            git commit -m "chore: keep-alive (avoid 60-day schedule auto-disable)"
+            git push
+          fi
