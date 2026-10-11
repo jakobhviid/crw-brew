@@ -69,7 +69,9 @@ renderer. Read the output, not just the exit code: a challenge page is a
   verifies each downloaded asset against it and reuses the value verbatim.
 - A daily GitHub Action ([`.github/workflows/update.yml`](.github/workflows/update.yml))
   runs `update.sh`; when upstream ships a new version it releases the new bottle
-  and pushes the formula to the tap. No-op when nothing changed. GitHub disables
+  and pushes the formula to the tap's `auto/formula-crw` branch, where the tap's
+  gate installs and tests it and lands it on `main` only if it passes (opening
+  an issue there if not). No-op when nothing changed. GitHub disables
   a repo's cron after 60 days of inactivity, so the job also pushes a throwaway
   `keep-alive` commit only when this repo is ≥50 days idle — enough to keep the
   schedule alive without daily noise.
