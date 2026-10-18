@@ -1,5 +1,12 @@
 # crw-brew
 
+> ### ⚠️ Archived — moved into the tap
+> The `crw` formula is now bumped daily inside
+> [jakobhviid/homebrew-tap](https://github.com/jakobhviid/homebrew-tap) by
+> `scripts/bump-formula.py`, with its Linux bottles in that repo's releases.
+> Nothing changes for users: `brew install jakobhviid/tap/crw` as before.
+> This repo is kept only so bottles of older versions stay downloadable.
+
 Homebrew packaging for **[crw](https://github.com/us/crw)** — a Rust web
 scraper, crawler and MCP server that turns URLs into clean Markdown or JSON —
 for **macOS and Linux** (arm64 + x86_64).
